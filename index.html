@@ -132,6 +132,26 @@
       pointer-events: none;
     }
 
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 5px;
+      font-size: 0.68rem;
+      color: #9ca3af;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .checkbox-row input {
+      width: 14px;
+      height: 14px;
+      margin: 0;
+      accent-color: #60a5fa;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+
     .button-row {
       display: flex;
       justify-content: flex-end;
@@ -224,6 +244,10 @@
           <input id="antennaHeight" type="number" step="0.1" placeholder="2" />
           <div class="unit">м</div>
         </div>
+        <label class="checkbox-row">
+          <input id="earthCurvature" type="checkbox" checked />
+          <span>Враховувати кривизну Землі</span>
+        </label>
       </div>
     </div>
 
@@ -242,7 +266,7 @@
     </div>
 
     <div class="helper">
-      <span>Формула: atan((H цілі − H антени) / D)</span>
+      <span>Формула: кут з урахуванням кривизни Землі.</span>
     </div>
   </div>
 
@@ -250,6 +274,7 @@
     const distanceInput = document.getElementById('distance');
     const targetInput = document.getElementById('targetHeight');
     const antennaInput = document.getElementById('antennaHeight');
+    const earthCurvatureInput = document.getElementById('earthCurvature');
     const resultBlock = document.getElementById('result');
     const angleValue = document.getElementById('angleValue');
     const resultNote = document.getElementById('resultNote');
@@ -274,9 +299,38 @@
         return;
       }
 
-      const deltaH = targetHeight - antennaHeight;
-      const angleRad = Math.atan(deltaH / distance);
-      const angleDeg = angleRad * 180 / Math.PI;
+      let angleDeg;
+      let curvatureDrop = 0;
+
+      if (earthCurvatureInput.checked) {
+        // Середній радіус Землі, м.
+        const EARTH_RADIUS = 6371000;
+
+        // "Дистанція до цілі" вважається відстанню по поверхні Землі.
+        const centralAngle = distance / EARTH_RADIUS;
+
+        // Радіуси від центра Землі до антени та цілі.
+        const rAntenna = EARTH_RADIUS + antennaHeight;
+        const rTarget = EARTH_RADIUS + targetHeight;
+
+        // Точний сферичний розрахунок кута від локального горизонту антени.
+        const horizontalComponent =
+          rTarget * Math.sin(centralAngle);
+
+        const verticalComponent =
+          rTarget * Math.cos(centralAngle) - rAntenna;
+
+        const angleRad = Math.atan2(verticalComponent, horizontalComponent);
+        angleDeg = angleRad * 180 / Math.PI;
+
+        // Наскільки поверхня Землі "опускається" на цій дистанції.
+        curvatureDrop =
+          EARTH_RADIUS * (1 - Math.cos(centralAngle));
+      } else {
+        // Старий розрахунок без кривизни Землі.
+        const deltaH = targetHeight - antennaHeight;
+        angleDeg = Math.atan(deltaH / distance) * 180 / Math.PI;
+      }
 
       const rounded = Math.round(angleDeg * 10) / 10;
       angleValue.textContent = rounded.toFixed(1);
@@ -286,12 +340,18 @@
         note = 'Підніми антену на ' + rounded.toFixed(1) + '° від горизонту.';
       } else if (rounded < 0) {
         const abs = Math.abs(rounded);
-        note = 'Опусти антенну на ' + abs.toFixed(1) + '° від горизонту.';
+        note = 'Опусти антену на ' + abs.toFixed(1) + '° від горизонту.';
       } else {
         note = 'Антена точно по горизонту (0°).';
       }
 
-      note += ' ΔH = ' + deltaH.toFixed(1) + ' м, D = ' + distance.toFixed(1) + ' м.';
+      note += ' ΔH = ' + (targetHeight - antennaHeight).toFixed(1) +
+        ' м, D = ' + distance.toFixed(1) + ' м.';
+
+      if (earthCurvatureInput.checked) {
+        note += ' Кривизна Землі ≈ ' + curvatureDrop.toFixed(1) + ' м.';
+      }
+
       resultNote.textContent = note;
       resultBlock.style.display = 'block';
 
@@ -304,6 +364,7 @@
       distanceInput.value = '';
       targetInput.value = '';
       antennaInput.value = '';
+      earthCurvatureInput.checked = true;
       resultBlock.style.display = 'none';
       distanceInput.focus();
     }
@@ -311,6 +372,7 @@
     distanceInput.addEventListener('input', calculateAngle);
     targetInput.addEventListener('input', calculateAngle);
     antennaInput.addEventListener('input', calculateAngle);
+    earthCurvatureInput.addEventListener('change', calculateAngle);
 
     const inputs = [distanceInput, targetInput, antennaInput];
     inputs.forEach(input => {
